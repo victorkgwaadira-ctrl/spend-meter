@@ -1,0 +1,29 @@
+name = "spend-meter"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Hourly sync. Each provider also has its own minimum interval (see src/index.ts):
+# Anthropic and OpenAI every hour, AWS and Azure every 6 hours
+# (AWS Cost Explorer charges $0.01 per request; Azure rate-limits cost queries).
+[triggers]
+crons = ["7 * * * *"]
+
+# The Deploy to Cloudflare button creates this database for you.
+# Deploying by hand? Run `npx wrangler d1 create spend-meter` and paste the id it prints.
+# Tables are created automatically on first use.
+[[d1_databases]]
+binding = "DB"
+database_name = "spend-meter"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.sql"]
+fallthrough = true
+
+[vars]
+# Anthropic's cost report returns amounts in the currency's lowest unit (cents).
+# Set to "dollars" only if your totals come out 100x too small.
+ANTHROPIC_AMOUNT_UNIT = "cents"
+# Optional email sender; with Resend's test sender you can only mail your own Resend account address.
+ALERT_EMAIL_FROM = "Spend Meter <onboarding@resend.dev>"

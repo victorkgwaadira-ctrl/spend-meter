@@ -1,0 +1,2 @@
+DASHBOARD_PASSWORD=choose-a-long-password # dashboard login at /app (any username)
+WEBHOOK_TOKEN=paste-a-long-random-string # 30+ random characters; part of every webhook URL

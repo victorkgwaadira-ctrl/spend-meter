@@ -1,0 +1,42 @@
+{
+  "name": "spend-meter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Know your API bill before it knows you. Hourly cost tracking and budget alerts for OpenAI, Anthropic, AWS, Azure and Google Cloud, on Cloudflare Workers.",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "Vikaranet (Pty) Ltd",
+  "keywords": [
+    "cloudflare-workers",
+    "finops",
+    "openai",
+    "anthropic",
+    "aws",
+    "azure",
+    "cost-tracking",
+    "budget-alerts",
+    "llm"
+  ],
+  "cloudflare": {
+    "bindings": {
+      "DASHBOARD_PASSWORD": {
+        "description": "Password for your dashboard at `/app`. Use any username to sign in."
+      },
+      "WEBHOOK_TOKEN": {
+        "description": "A long random string (30+ characters). It goes in every webhook URL, so treat it like a password."
+      }
+    }
+  }
+}
