@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Spend Meter</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: utility-meter console — sync strip, summary gauges, daily strip, then log + controls */
+:root{
+  --bg:#F2F4F6; --surface:#FFFFFF; --sunk:#E8ECF0; --line:#D5DCE3;
+  --fg:#0F1B2D; --muted:#4B5A6C; --accent:#0E6B66; --accent-ink:#FFFFFF;
+  --housing:#0F1B2D; --housing-2:#1A2A40; --housing-fg:#E9EEF4; --housing-mute:#8B9BB0; --needle:#F2A20C;
+  --ok-h:#5CC18A; --warn-h:#F5B53A; --bad-h:#F07A70;
+  --ai:#6447CF; --cloud:#1B7AB3; --other:#B9701A;
+  --ok:#2E7D4F; --warn:#B7791F; --bad:#B4372F;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0C1219; --surface:#141D27; --sunk:#1B2632; --line:#25313E;
+  --housing:#070C12; --housing-2:#13202F;
+  --fg:#E4EAF0; --muted:#93A2B2; --accent:#3FB6AD; --accent-ink:#06201E;
+  --ai:#9C88F2; --cloud:#5CB3E8; --other:#E2A04D;
+  --ok:#5CC18A; --warn:#E2B04D; --bad:#F07A70; color-scheme:dark }}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.wrap{max-width:1160px;margin:0 auto;padding-inline:16px;padding-block:20px 40px;display:grid;gap:18px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0}
+h1{font-size:1.7rem;font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.05rem;font-weight:700}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,input{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:6px 11px;font-size:.85rem;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0;box-shadow:0 1px 2px rgba(15,27,45,.04)}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:7px;padding:10px 14px;font-weight:600}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line);padding:7px 12px;font-weight:500}
+.btn:disabled{opacity:.6;cursor:wait}
+
+/* sync strip */
+.sync{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:3px 10px;border-radius:99px;border:1px solid var(--line);background:var(--surface)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.off{background:transparent;border:1.5px solid var(--muted)}
+
+/* meter: the instrument */
+.meter{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:0;border-radius:20px;overflow:hidden;color:var(--housing-fg);background:linear-gradient(160deg,var(--housing-2),var(--housing));box-shadow:0 24px 50px -30px rgba(15,27,45,.55)}
+.meter .label{color:var(--housing-mute)}
+.meter .muted{color:var(--housing-mute)}
+.m-main{padding:22px 28px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,240px);gap:8px 20px;align-items:center}
+.m-main .stack{display:grid;gap:4px;align-content:center}
+.big{font-family:var(--mono);font-size:clamp(1.9rem,4.4vw,2.7rem);font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.mid{font-family:var(--mono);font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums}
+.mdial{width:100%;max-width:220px;display:block}
+.mdial text{font-family:var(--mono);fill:var(--housing-mute);font-size:10px}
+.mdial .pct{font-size:22px;font-weight:600;fill:var(--housing-fg)}
+@media (prefers-reduced-motion:no-preference){#dNeedle{transition:transform .9s cubic-bezier(.2,.8,.2,1)}#dArc{transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)}}
+.m-side{display:grid;border-left:1px solid rgba(255,255,255,.08)}
+.m-side>div{padding:14px 20px;display:grid;gap:3px;border-bottom:1px solid rgba(255,255,255,.08);align-content:center}
+.m-side>div:last-child{border-bottom:0}
+.gauge{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-top:6px;position:relative}
+.gauge i{display:block;height:100%;border-radius:3px}
+.gauge b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--housing-fg);opacity:.6}
+.gauge s{position:absolute;top:0;bottom:0;width:1px;background:var(--housing)}
+.pill{display:inline-block;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:99px;border:1px solid currentColor;width:max-content}
+@media (max-width:860px){.meter{grid-template-columns:1fr}.m-side{border-left:0;border-top:1px solid rgba(255,255,255,.08)}}
+@media (max-width:480px){.m-main{grid-template-columns:1fr}.mdial{max-width:240px;margin:0 auto}}
+
+/* brand bar */
+.topbar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.brand b{font-family:var(--display);font-size:1.25rem;letter-spacing:-.02em;display:block;line-height:1.1}
+.brand small{display:block;font-size:.72rem;color:var(--muted)}
+
+/* chart */
+.chart{display:grid;grid-template-columns:auto 1fr;gap:6px;margin-top:14px}
+.yax{display:flex;flex-direction:column;justify-content:space-between;align-items:end;font-size:.7rem;color:var(--muted);height:180px}
+.plot{position:relative;height:180px;border-bottom:1px solid var(--line);display:flex;align-items:end;gap:2px;min-width:0}
+.grid{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
+.grid span{border-top:1px dashed var(--line);opacity:.7}
+.bar{flex:1;display:flex;flex-direction:column-reverse;min-width:0;position:relative;z-index:1;height:100%}
+.bar i{display:block;width:100%}
+.bar i:last-child{border-radius:2px 2px 0 0}
+.bar.today::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:3px;background:var(--fg);border-radius:2px}
+.xax{grid-column:2;display:flex;gap:2px;font-size:.65rem;color:var(--muted)}
+.xax span{flex:1;text-align:center;min-width:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.stack{display:grid;gap:18px;min-width:0}
+.brk{display:grid;gap:10px;margin-top:12px}
+.brk-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:.9rem}
+.brk-row .gauge{grid-column:1/-1;margin-top:0;height:6px}
+
+.tbl-wrap{overflow-x:auto;margin-top:10px;max-height:520px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:560px}
+th{text-align:left;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.r,th.r{text-align:right}
+.src{font-size:.68rem;border-radius:4px;padding:0 5px;margin-left:6px;border:1px solid var(--line);color:var(--muted)}
+.cat{display:inline-flex;align-items:center;font-size:.78rem;color:var(--muted)}
+.del{border:1px solid transparent;background:none;color:var(--muted);border-radius:5px;padding:2px 8px;font-size:.8rem}
+.del:hover{border-color:var(--line)}
+.del.arm{color:var(--bad);border-color:var(--bad)}
+
+form{display:grid;gap:12px;margin-top:12px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:grid;gap:4px;min-width:0}
+.field span{font-size:.8rem;color:var(--muted);font-weight:500}
+.field input,.field select{width:100%}
+.calc{display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;background:var(--sunk);border-radius:8px}
+.hint{font-size:.78rem;color:var(--muted)}
+details summary{cursor:pointer;font-family:var(--display);font-weight:700;list-style:none;display:flex;justify-content:space-between}
+details summary::-webkit-details-marker{display:none}
+details summary::after{content:"+";color:var(--muted)}
+details[open] summary::after{content:"–"}
+.rates{display:grid;gap:6px;margin-top:8px}
+.rate{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) 70px 70px auto;gap:6px;align-items:center}
+.rate input{padding:5px 7px;font-size:.85rem}
+.hook{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:.82rem}
+.hook code{font-family:var(--mono);font-size:.74rem;background:var(--sunk);padding:4px 6px;border-radius:5px;overflow-x:auto;white-space:nowrap;display:block}
+.feed{display:grid;gap:8px;margin-top:10px;font-size:.85rem}
+.feed div{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px}
+@media (max-width:520px){.rate{grid-template-columns:1fr 1fr}.f2{grid-template-columns:1fr}}
+.gwchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.gwchips .chip{font-size:.74rem;padding:2px 8px}
+.tr-num{white-space:nowrap}
+.err-bar{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;margin-left:6px;background:var(--bad)}
+.prule{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) 84px auto;gap:6px;align-items:center}
+.prule input,.prule select{padding:5px 7px;font-size:.85rem}
+@media (max-width:520px){.prule{grid-template-columns:1fr 1fr}}
+.conns{display:grid;gap:0;margin-top:10px}
+.conn{border-top:1px solid var(--line);padding-block:10px;display:grid;gap:8px}
+.conn:first-child{border-top:0}
+.conn-head{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.conn-name{display:flex;align-items:center;gap:8px;font-weight:600;min-width:0}
+.conn-sub{font-size:.78rem;color:var(--muted);font-weight:400}
+.conn form{margin-top:0;gap:8px}
+.conn .field input{font-family:var(--mono);font-size:.85rem}
+.conn-msg{font-size:.85rem;padding:8px 10px;border-radius:7px;background:var(--sunk)}
+.conn-msg.ok{color:var(--ok)} .conn-msg.bad{color:var(--bad)}
+.conn-kind{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:12px}
+.linkish{color:var(--accent);font-size:.8rem}
+.demo-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:14px;background:color-mix(in srgb,var(--needle) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--needle) 45%,var(--line));font-size:.92rem}
+.demo-bar a{text-decoration:none;padding:7px 12px;font-size:.88rem}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:7px;font-size:.88rem;z-index:5;max-width:calc(100% - 32px)}
+.err{border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px 14px}
+@media (prefers-reduced-motion:no-preference){.gauge i,.bar i{transition:height .3s,width .3s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <a class="brand" href="/" title="Spend Meter home">
+      <svg width="36" height="36" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="var(--fg)"/><path d="M7 22a10 10 0 0 1 20 0" fill="none" stroke="var(--bg)" stroke-width="2.4" stroke-linecap="round"/><path d="M17 22 L23.5 14" stroke="var(--needle)" stroke-width="2.6" stroke-linecap="round"/><circle cx="17" cy="22" r="2.4" fill="var(--bg)"/></svg>
+      <span><b>Spend Meter</b><small>by Vikaranet</small></span>
+    </a>
+    <div class="row">
+      <select id="month" aria-label="Month"></select>
+    </div>
+  </header>
+
+  <div class="demo-bar" id="demoBar" hidden>
+    <span><b>Demo</b> · You're exploring Spend Meter with sample data. Nothing here is saved.</span>
+    <span class="row"><a class="btn ghost" href="/">Back to home</a><a class="btn" href="/app">Sign in to your meter</a></span>
+  </div>
+  <div class="err" id="loadErr" hidden></div>
+
+  <section class="panel sync" aria-label="Provider sync status">
+    <div class="chips" id="provChips"></div>
+    <button type="button" class="btn ghost" id="syncBtn">Sync now</button>
+  </section>
+
+  <section class="meter" aria-label="Month summary">
+    <div class="m-main">
+      <div class="stack">
+        <span class="label">Spent this month</span>
+        <span class="big" id="kSpent">–</span>
+        <span class="muted" id="kCount"></span>
+      </div>
+      <svg class="mdial" viewBox="0 0 240 140" role="img" aria-label="Share of monthly budget used" id="dial">
+        <path d="M24 116 A96 96 0 0 1 216 116" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="12" stroke-linecap="round"/>
+        <path id="dArc" d="M24 116 A96 96 0 0 1 216 116" fill="none" stroke="var(--ok-h)" stroke-width="12" stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="301.6"/>
+        <g id="dTicks"></g>
+        <g id="dNeedle" style="transform-origin:120px 116px;transform:rotate(-90deg)"><line x1="120" y1="116" x2="120" y2="38" stroke="var(--needle)" stroke-width="4" stroke-linecap="round"/></g>
+        <circle cx="120" cy="116" r="7" fill="var(--housing-fg)"/>
+        <text class="pct" id="dPct" x="120" y="96" text-anchor="middle">–</text>
+        <text x="24" y="136" text-anchor="middle">0</text><text x="216" y="136" text-anchor="middle">100%</text>
+      </svg>
+    </div>
+    <div class="m-side">
+      <div><span class="label">Budget</span><span class="mid" id="kBudget">–</span><div class="gauge" aria-hidden="true" id="gWrap"><i id="gBudget"></i><b id="gProj"></b></div><span id="kBudgetState"></span></div>
+      <div><span class="label">Projected month-end</span><span class="mid" id="kProj">–</span><span class="muted" id="kRate"></span></div>
+      <div><span class="label">Biggest provider</span><span class="mid" id="kTop" style="font-family:var(--display)">–</span><span class="muted" id="kTopShare"></span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;align-items:baseline">
+      <h2>Daily spend</h2>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--ai)"></i>AI / LLM</span>
+        <span><i class="sw" style="background:var(--cloud)"></i>Cloud</span>
+        <span><i class="sw" style="background:var(--other)"></i>Other APIs</span>
+      </div>
+    </div>
+    <div class="chart">
+      <div class="yax num" id="yax"></div>
+      <div class="plot" id="plot"><div class="grid"><span></span><span></span><span></span><span></span><span></span></div></div>
+      <div class="xax num" id="xax"></div>
+    </div>
+  </section>
+
+  <div class="cols">
+    <div class="stack">
+      <section class="panel">
+        <div class="row" style="justify-content:space-between">
+          <h2>Cost log</h2>
+          <div class="row">
+            <select id="filterCat" aria-label="Filter by category">
+              <option value="">All categories</option><option value="ai">AI / LLM</option><option value="cloud">Cloud</option><option value="other">Other APIs</option>
+            </select>
+            <button type="button" class="btn ghost" id="exportBtn">Export CSV</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Provider · service</th><th>Usage</th><th class="r">Cost</th><th></th></tr></thead>
+            <tbody id="rows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>By provider</h2>
+        <div class="brk" id="brk"></div>
+      </section>
+      <section class="panel">
+        <div class="row" style="justify-content:space-between;align-items:baseline">
+          <h2>Gateway traffic</h2>
+          <select id="gwFilter" aria-label="Filter by gateway"><option value="">All gateways</option></select>
+        </div>
+        <div class="gwchips" id="gwChips"></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Gateway · API</th><th class="r">Requests</th><th class="r">Errors</th><th class="r">Avg latency</th><th class="r">Cost</th></tr></thead>
+            <tbody id="trafficRows"></tbody>
+          </table>
+        </div>
+        <p class="hint" style="margin:8px 0 0">Traffic only counts toward spend once it matches a price under “Gateway pricing”.</p>
+      </section>
+      <section class="panel">
+        <h2>Activity</h2>
+        <div class="feed" id="feed"></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <h2>Connections</h2>
+        <p class="hint" style="margin:4px 0 0">Paste a key and press Test &amp; save. It's checked live, stored encrypted, and syncing starts straight away.</p>
+        <div id="conns"></div>
+      </section>
+      <section class="panel">
+        <h2>Log usage by hand</h2>
+        <p class="hint" style="margin:4px 0 0">For APIs without a billing API. Synced providers fill in on their own.</p>
+        <form id="form" autocomplete="off">
+          <div class="seg" role="group" aria-label="Category" id="catSeg" style="width:max-content">
+            <button type="button" data-cat="ai" aria-pressed="false">AI / LLM</button>
+            <button type="button" data-cat="cloud" aria-pressed="false">Cloud</button>
+            <button type="button" data-cat="other" aria-pressed="true">Other API</button>
+          </div>
+          <label class="field" id="rateWrap" hidden><span>Rate card</span><select id="rateSel"></select></label>
+          <div class="f2">
+            <label class="field"><span>Provider</span><input id="fProvider" required placeholder="Twilio"></label>
+            <label class="field"><span>Model / service</span><input id="fService" required placeholder="SMS, Maps, Payments…"></label>
+          </div>
+          <div class="f2">
+            <label class="field"><span>Date</span><input type="date" id="fDate" required></label>
+            <label class="field"><span>Priced by</span>
+              <select id="fMode"><option value="tokens">Tokens</option><option value="units">Units × price</option><option value="amount">Billed amount</option></select>
+            </label>
+          </div>
+          <div class="f2" data-mode="tokens" hidden>
+            <label class="field"><span>Input tokens</span><input id="fIn" type="number" min="0" step="1" inputmode="numeric"></label>
+            <label class="field"><span>Output tokens</span><input id="fOut" type="number" min="0" step="1" inputmode="numeric"></label>
+            <label class="field"><span>$ per 1M input</span><input id="fInRate" type="number" min="0" step="0.01" inputmode="decimal"></label>
+            <label class="field"><span>$ per 1M output</span><input id="fOutRate" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          </div>
+          <div class="f2" data-mode="units">
+            <label class="field"><span>Units</span><input id="fUnits" type="number" min="0" step="any" inputmode="decimal" placeholder="420"></label>
+            <label class="field"><span>Unit label</span><input id="fUnitLabel" placeholder="messages"></label>
+            <label class="field"><span>USD per unit</span><input id="fUnitPrice" type="number" min="0" step="any" inputmode="decimal"></label>
+          </div>
+          <div data-mode="amount" hidden>
+            <label class="field"><span>Billed amount (USD)</span><input id="fAmount" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          </div>
+          <label class="field"><span>Note (optional)</span><input id="fNote"></label>
+          <div class="calc"><span class="muted">Cost</span><span class="num" style="font-weight:600;font-size:1.1rem" id="fCalc">$0.00</span></div>
+          <button class="btn" type="submit">Add to log</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <details id="alertsBox" open>
+          <summary>Budget &amp; alerts</summary>
+          <div style="display:grid;gap:12px;margin-top:12px">
+            <label class="field"><span>Monthly budget (USD)</span><input id="sBudget" type="number" min="0" step="1" inputmode="decimal"></label>
+            <label class="field"><span>Alert at these percentages of budget</span><input id="sLevels" placeholder="50, 80, 100"></label>
+            <div>
+              <div class="label" style="margin-bottom:6px">Alert channels</div>
+              <div class="chips" id="chanChips"></div>
+            </div>
+            <div class="row" style="justify-content:space-between">
+              <span class="hint">Each level alerts once a month.</span>
+              <button type="button" class="btn ghost" id="testBtn">Send test alert</button>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Webhook URLs</summary>
+          <p class="hint">Paste these into each provider's budget alert settings. Keep them private: the token in each URL lets anyone post to your tracker.</p>
+          <div style="display:grid;gap:8px" id="hooks"></div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Gateway pricing</summary>
+          <p class="hint">USD per 1,000 requests. First matching rule wins. Use * as a wildcard, e.g. <span class="num">/v1/chat*</span>.</p>
+          <div class="rates" id="prules"></div>
+          <div class="row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="btn ghost" id="addPrule">Add price</button></div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Connect a gateway</summary>
+          <p class="hint">Pick your gateway and paste its URL into the gateway's log or webhook settings. The setup guide (GATEWAYS.md) has the exact config for each one.</p>
+          <div style="display:grid;gap:8px">
+            <select id="gwPick" aria-label="Gateway"></select>
+            <div class="hook" style="grid-template-columns:minmax(0,1fr) auto"><code id="gwUrl"></code><button type="button" class="del" id="gwCopy">Copy</button></div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Token rate cards</summary>
+          <div class="rates" id="rates"></div>
+          <div class="row" style="justify-content:space-between;margin-top:8px">
+            <span class="hint">USD per 1M tokens. Check each provider's pricing page.</span>
+            <button type="button" class="btn ghost" id="addRate">Add rate</button>
+          </div>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const CAT={ai:{name:"AI / LLM",c:"var(--ai)"},cloud:{name:"Cloud",c:"var(--cloud)"},other:{name:"Other APIs",c:"var(--other)"}};
+const SRC={api:"Auto",webhook:"Webhook",manual:"Manual",gateway:"Gateway"};
+let S=null, month=null, cat="other", filterCat="";
+const pad=n=>String(n).padStart(2,"0");
+const todayIso=new Date().toISOString().slice(0,10);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let tt=null; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,Math.max(3200,m.length*60))}
+
+const DEMO=location.pathname.replace(/\/+$/,"")==="/demo", BASE=DEMO?"/demo":"";
+let demoNoted=false;
+async function api(path,opts={}){
+  if(DEMO&&(opts.method||"GET")!=="GET"){
+    if(path==="/api/test-alert") return {telegram:"sent",email:"sent",slack:"sent"};
+    if(path==="/api/sync") return {};
+    if(!demoNoted){demoNoted=true;toast("Demo mode: you can try things, but changes aren't saved.")}
+    return {ok:true};
+  }
+  path=BASE+path;
+  const r=await fetch(path,Object.assign({headers:{"Content-Type":"application/json"}},opts));
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||("Request failed ("+r.status+")"));
+  return j;
+}
+async function load(){
+  try{
+    S=await api("/api/state"+(month?"?month="+month:""));
+    month=S.month; $("#loadErr").hidden=true; render();
+  }catch(e){ $("#loadErr").hidden=false; $("#loadErr").textContent="Couldn't load your data: "+e.message; }
+}
+
+function money(usd,short){
+  const v=usd, p="$";
+  if(short&&Math.abs(v)>=1000) return p+(v/1000).toFixed(v>=10000?0:1)+"k";
+  return p+v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function ago(ms){const m=Math.round((Date.now()-ms)/60000); if(m<1)return"just now"; if(m<60)return m+" min ago"; const h=Math.round(m/60); if(h<48)return h+" h ago"; return Math.round(h/24)+" days ago"}
+function niceStep(raw){if(raw<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(raw)));const f=raw/p;return(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p}
+
+function render(){
+  const sm=S.summary, st=S.settings;
+  $("#month").innerHTML=S.months.map(m=>{const[y,mm]=m.split("-");return`<option value="${m}"${m===month?" selected":""}>${new Date(+y,+mm-1,1).toLocaleString("en-US",{month:"long",year:"numeric"})}</option>`}).join("");
+
+  // providers
+  const runs=Object.fromEntries(S.runs.map(r=>[r.provider,r]));
+  $("#provChips").innerHTML=Object.entries(S.providers).map(([id,p])=>{
+    if(!p.pulls){ const seen=S.events.some(e=>e.provider===id); return `<span class="chip" title="Updates from budget notifications"><i class="dot ${seen?"ok":"off"}"></i>${esc(p.name)} <span class="muted">${seen?"via webhook":"waiting for webhook"}</span></span>`; }
+    if(!p.connected) return `<span class="chip" title="Add its keys as Worker secrets"><i class="dot off"></i>${esc(p.name)} <span class="muted">not connected</span></span>`;
+    const r=runs[id]; if(!r) return `<span class="chip"><i class="dot"></i>${esc(p.name)} <span class="muted">waiting for first sync</span></span>`;
+    return `<span class="chip" title="${esc(r.message)}"><i class="dot ${r.ok?"ok":"bad"}"></i>${esc(p.name)} <span class="muted">${r.ok?"synced "+ago(r.ran_at):"sync failed"}</span></span>`;
+  }).join("");
+
+  // meter
+  const budget=st.budget, pct=budget?sm.total/budget:0, ppct=budget?sm.projected/budget:0;
+  const state=!budget?null:sm.total>budget?["Over budget","var(--bad-h)"]:ppct>1?["On track to exceed","var(--warn-h)"]:["Within budget","var(--ok-h)"];
+  { const P=Math.max(0,Math.min(1,pct));
+    $("#dArc").style.strokeDashoffset=String(301.6*(1-P)); $("#dArc").style.stroke=state?state[1]:"var(--housing-mute)";
+    $("#dNeedle").style.transform="rotate("+(-90+180*P)+"deg)";
+    $("#dPct").textContent=budget?Math.round(pct*100)+"%":"No budget";
+    $("#dTicks").innerHTML=(st.levels||[]).filter(l=>l>0&&l<100).map(l=>{const a=Math.PI*(1-l/100),x1=120+104*Math.cos(a),y1=116-104*Math.sin(a),x2=120+88*Math.cos(a),y2=116-88*Math.sin(a);return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="rgba(255,255,255,.45)" stroke-width="2"/>`}).join(""); }
+  $("#kSpent").textContent=money(sm.total);
+  $("#kCount").textContent=sm.items.length+" line item"+(sm.items.length===1?"":"s");
+  $("#kBudget").textContent=budget?money(budget):"Not set";
+  $("#gBudget").style.width=Math.min(100,pct*100)+"%"; $("#gBudget").style.background=state?state[1]:"var(--muted)";
+  $("#gProj").hidden=!budget||!sm.isCurrent; $("#gProj").style.left="calc("+Math.min(100,ppct*100)+"% - 1px)";
+  $("#gWrap").querySelectorAll("s").forEach(n=>n.remove());
+  (st.levels||[]).filter(l=>l<100).forEach(l=>{const s=document.createElement("s");s.style.left=l+"%";$("#gWrap").appendChild(s)});
+  $("#kBudgetState").innerHTML=state?`<span class="pill" style="color:${state[1]}">${state[0]} · ${Math.round(pct*100)}%</span>`:`<span class="muted">Set one under Budget &amp; alerts</span>`;
+  $("#kProj").textContent=money(sm.projected);
+  $("#kRate").textContent=sm.isCurrent?money(sm.total/Math.max(1,sm.elapsed))+" a day over "+sm.elapsed+" days":"Month closed";
+  const top=sm.byProvider[0];
+  $("#kTop").textContent=top?top.name:"–"; $("#kTopShare").textContent=top&&sm.total?Math.round(top.amount/sm.total*100)+"% of spend":"";
+
+  // chart
+  const maxDay=Math.max(0,...sm.daily.map(d=>d.ai+d.cloud+d.other)); const step=niceStep(maxDay/4), topV=step*4||1;
+  $("#yax").innerHTML=[4,3,2,1,0].map(i=>`<span>${money(step*i,true).replace(/\.00$/,"")}</span>`).join("");
+  const plot=$("#plot"); plot.querySelectorAll(".bar").forEach(n=>n.remove());
+  const todayD=sm.isCurrent?Number(todayIso.slice(8)):-1;
+  sm.daily.forEach((d,i)=>{const b=document.createElement("div");b.className="bar"+(i+1===todayD?" today":"");
+    b.title=`${month}-${pad(i+1)}: ${money(d.ai+d.cloud+d.other)}`;
+    b.innerHTML=["ai","cloud","other"].filter(k=>d[k]>0).map(k=>`<i style="height:${d[k]/topV*100}%;background:${CAT[k].c}"></i>`).join("");
+    plot.appendChild(b)});
+  $("#xax").innerHTML=sm.daily.map((_,i)=>`<span>${(i===0||(i+1)%5===0)?i+1:""}</span>`).join("");
+
+  // breakdown
+  $("#brk").innerHTML=sm.byProvider.length?sm.byProvider.map(p=>`<div class="brk-row"><span><i class="sw" style="background:${CAT[p.category].c}"></i>${esc(p.name)}</span><span class="num">${money(p.amount)}</span><div class="gauge"><i style="width:${p.amount/sm.byProvider[0].amount*100}%;background:${CAT[p.category].c}"></i></div></div>`).join(""):`<p class="muted" style="margin:0">No costs for this month yet.</p>`;
+
+  renderRows();
+
+  renderTraffic();
+  renderConns();
+
+  // feed
+  const feed=[...S.events.map(e=>({t:e.received_at,who:e.provider,txt:e.summary})),...S.alerts.map(a=>({t:a.sent_at,who:"alert",txt:(a.scope==="total"?"Budget":a.scope)+" alert at "+a.level+"% ("+a.detail+")"}))].sort((a,b)=>b.t-a.t).slice(0,20);
+  $("#feed").innerHTML=feed.length?feed.map(f=>`<div><span class="muted num" style="font-size:.75rem;white-space:nowrap">${ago(f.t)}</span><span><b>${esc(f.who)}</b> · ${esc(f.txt)}</span></div>`).join(""):`<span class="muted">Webhooks and alerts will show here.</span>`;
+
+  // settings (don't overwrite a field being edited)
+  const setIf=(sel,v)=>{if(document.activeElement!==$(sel))$(sel).value=v};
+  setIf("#sBudget",st.budget); setIf("#sLevels",(st.levels||[]).join(", "));
+  const names={email:"Email",telegram:"Telegram",whatsapp:"WhatsApp",slack:"Slack",teams:"Teams"};
+  $("#chanChips").innerHTML=Object.entries(S.channels).map(([k,on])=>`<span class="chip"><i class="dot ${on?"ok":"off"}"></i>${names[k]} <span class="muted">${on?"on":"not set up"}</span></span>`).join("");
+  const hookNames={gcp:"Google",aws:"AWS",azure:"Azure",twilio:"Twilio",generic:"Any API"};
+  $("#hooks").innerHTML=Object.entries(S.webhooks).map(([k,u])=>`<div class="hook"><span>${hookNames[k]}</span><code>${esc(u)}</code><button type="button" class="del" data-copy="${esc(u)}">Copy</button></div>`).join("");
+  if(!$("#rates").contains(document.activeElement)) renderRates();
+  updateCalc();
+}
+
+let gwFilter="";
+function fmtInt(n){return Number(n||0).toLocaleString("en-US")}
+function renderTraffic(){
+  const gws=S.gateways, list=S.summary.traffic.filter(t=>!gwFilter||t.gateway===gwFilter);
+  const active=Object.entries(gws).filter(([,g])=>g.lastAt);
+  $("#gwFilter").innerHTML=`<option value="">All gateways</option>`+active.map(([k,g])=>`<option value="${k}"${k===gwFilter?" selected":""}>${esc(g.name)}</option>`).join("");
+  $("#gwChips").innerHTML=active.length?active.map(([k,g])=>{const fresh=Date.now()-g.lastAt<2*3600e3;return `<span class="chip" title="${fmtInt(g.requests)} requests all time"><i class="dot ${fresh?"ok":""}"></i>${esc(g.name)} <span class="muted">${ago(g.lastAt)}</span></span>`}).join(""):`<span class="muted" style="font-size:.85rem">No gateway has sent logs yet. Open “Connect a gateway” to get its URL.</span>`;
+  $("#trafficRows").innerHTML=list.length?list.slice(0,300).map(t=>{
+    const errs=t.err4xx+t.err5xx, rate=t.requests?errs/t.requests:0;
+    return `<tr><td><div>${esc(t.gatewayName)} · <span class="num" style="font-size:.85rem">${esc(t.api)}</span></div>${t.consumers>1?`<span class="cat">${t.consumers} consumers</span>`:""}</td>
+      <td class="r num tr-num">${fmtInt(t.requests)}</td>
+      <td class="r num tr-num" title="${fmtInt(t.err4xx)} 4xx · ${fmtInt(t.err5xx)} 5xx">${(rate*100).toFixed(rate&&rate<.01?2:1)}%${t.err5xx?`<span class="err-bar" style="width:${Math.max(3,Math.min(30,t.err5xx/t.requests*300))}px"></span>`:""}</td>
+      <td class="r num tr-num">${t.avgLatencyMs==null?"–":t.avgLatencyMs<1000?Math.round(t.avgLatencyMs)+" ms":(t.avgLatencyMs/1000).toFixed(2)+" s"}</td>
+      <td class="r num tr-num">${t.per1k==null?'<span class="muted">no price</span>':money(t.cost)}</td></tr>`}).join("")
+    :`<tr><td colspan="5" class="muted">No gateway traffic this month.</td></tr>`;
+  // connect picker
+  if(!$("#gwPick").options.length){
+    $("#gwPick").innerHTML=Object.entries(gws).map(([k,g])=>`<option value="${k}">${esc(g.name)}</option>`).join("");
+  }
+  $("#gwUrl").textContent=S.gatewayBase+$("#gwPick").value+"?token="+encodeURIComponent(S.webhookToken);
+  if(!$("#prules").contains(document.activeElement)) renderPrules();
+}
+function renderPrules(){
+  const opts=`<option value="*">Any gateway</option>`+Object.entries(S.gateways).map(([k,g])=>`<option value="${k}">${esc(g.name)}</option>`).join("");
+  $("#prules").innerHTML=(S.settings.priceRules||[]).map(r=>`<div class="prule" data-id="${esc(r.id)}">
+    <select aria-label="Gateway" data-k="gateway">${opts.replace(`value="${r.gateway}"`,`value="${r.gateway}" selected`)}</select>
+    <input aria-label="API pattern" data-k="api" value="${esc(r.api)}" placeholder="*">
+    <input aria-label="USD per 1,000 requests" data-k="per1k" type="number" min="0" step="0.0001" value="${r.per1k}">
+    <button type="button" class="del" data-pdel="${esc(r.id)}">Remove</button></div>`).join("")||`<span class="hint">No prices yet, so gateway traffic is tracked but not costed.</span>`;
+}
+
+let openConn=null; const connMsg={};
+function renderConns(force){
+  const box=$("#conns");
+  if(!force&&openConn&&[...box.querySelectorAll("input")].some(i=>i.value||i===document.activeElement)) return;
+  const list=S.connections||[];
+  const group=(kind,label)=>`<div class="conn-kind">${label}</div><div class="conns">`+list.filter(c=>c.kind===kind).map(c=>{
+    const st={connected:["ok","Connected"],partial:["","Incomplete"],reenter:["bad","Re-enter key"],off:["off","Not connected"]}[c.state];
+    const via=c.state==="connected"?(c.lockedBySecret?" · Cloudflare secret":" · dashboard"):"";
+    const open=openConn===c.id, m=connMsg[c.id];
+    return `<div class="conn" data-id="${c.id}">
+      <div class="conn-head"><span class="conn-name"><i class="dot ${st[0]}"></i>${esc(c.name)} <span class="conn-sub">${st[1]}${via}</span></span>
+        <button type="button" class="btn ghost" data-toggle="${c.id}" style="padding:4px 10px;font-size:.82rem">${open?"Close":c.state==="connected"?"Update":"Connect"}</button></div>
+      ${open?`<form data-form="${c.id}" autocomplete="off">
+        <span class="hint">${esc(c.help)} <a class="linkish" href="${esc(c.helpUrl)}" target="_blank" rel="noopener">Open ↗</a></span>
+        ${c.fields.map(f=>`<label class="field"><span>${esc(f.label)}${f.set?` <span class="muted">· saved ${esc(f.preview)}</span>`:""}</span>
+          <input id="cf-${f.key}" name="${f.key}" type="${f.secret?"password":"text"}" placeholder="${f.set?"Leave blank to keep":esc(f.placeholder)}" spellcheck="false" autocapitalize="off"></label>`).join("")}
+        ${m?`<div class="conn-msg ${m.ok?"ok":"bad"}">${esc(m.text)}</div>`:""}
+        <div class="row" style="justify-content:space-between">
+          ${c.state!=="off"?`<button type="button" class="del" data-disc="${c.id}">Disconnect</button>`:"<span></span>"}
+          <div class="row">${m&&m.canForce?`<button type="button" class="btn ghost" data-force="${c.id}">Save anyway</button>`:""}<button type="submit" class="btn" style="padding:7px 14px">Test &amp; save</button></div>
+        </div></form>`:(m&&m.ok?`<div class="conn-msg ok">${esc(m.text)}</div>`:"")}
+    </div>`}).join("")+`</div>`;
+  box.innerHTML=group("provider","Cost sources")+group("channel","Alert channels");
+}
+async function submitConn(id,force){
+  const f=document.querySelector(`[data-form="${id}"]`); if(!f) return;
+  const values={}; f.querySelectorAll("input").forEach(i=>{if(i.value.trim()) values[i.name]=i.value});
+  const btn=f.querySelector('button[type="submit"]'); btn.disabled=true; btn.textContent="Testing…";
+  try{
+    if(DEMO){ connMsg[id]={ok:false,text:"Demo mode: connections are disabled. Sign in to your own meter to connect real keys."}; btn.disabled=false; btn.textContent="Test & save"; renderConns(true); return; }
+    const r=await fetch("/api/connections/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({values,force})});
+    const j=await r.json().catch(()=>({message:"Unexpected response"}));
+    connMsg[id]={ok:!!j.ok,text:j.message||"",canForce:!!j.canForce};
+    if(j.ok){ openConn=null; toast(j.message||"Saved"); await load(); return; }
+  }catch(e){ connMsg[id]={ok:false,text:e.message} }
+  btn.disabled=false; btn.textContent="Test & save"; renderConns(true);
+}
+$("#conns").addEventListener("click",async e=>{
+  const t=e.target.closest("[data-toggle]");
+  if(t){ openConn=openConn===t.dataset.toggle?null:t.dataset.toggle; delete connMsg[t.dataset.toggle]; renderConns(true); const first=document.querySelector(`[data-form="${openConn}"] input`); first&&first.focus(); return; }
+  const fo=e.target.closest("[data-force]"); if(fo){ submitConn(fo.dataset.force,true); return; }
+  const d=e.target.closest("[data-disc]");
+  if(d){ if(!d.classList.contains("arm")){d.classList.add("arm");d.textContent="Confirm disconnect";return}
+    try{const r=await api("/api/connections/"+d.dataset.disc,{method:"DELETE"}); toast(r.message); openConn=null; await load()}catch(err){toast(err.message)} }
+});
+$("#conns").addEventListener("submit",e=>{e.preventDefault(); submitConn(e.target.dataset.form,false)});
+
+function renderRows(){
+  const list=S.summary.items.filter(e=>!filterCat||e.category===filterCat);
+  $("#rows").innerHTML=list.length?list.slice(0,400).map(e=>{
+    const dt=new Date(e.day+"T00:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+    return `<tr><td class="num" style="white-space:nowrap">${dt}</td>
+      <td><div>${esc(e.provider)} · ${esc(e.service)}<span class="src">${SRC[e.source]}</span></div><span class="cat"><i class="sw" style="background:${CAT[e.category].c}"></i>${CAT[e.category].name}${e.note?" · "+esc(e.note):""}</span></td>
+      <td class="muted" style="font-size:.8rem">${esc(e.usage||(e.currency&&e.currency!=="USD"?"Billed in "+e.currency:""))}</td>
+      <td class="r num">${money(e.amount)}</td>
+      <td class="r">${e.source==="manual"?`<button type="button" class="del" data-del="${esc(e.id)}">Delete</button>`:""}</td></tr>`}).join("")
+    :`<tr><td colspan="5" class="muted">No costs for this month yet. Connected providers appear after their first sync.</td></tr>`;
+}
+
+/* ---------- settings ---------- */
+let saveT=null;
+function saveSettings(patch){
+  Object.assign(S.settings,patch); render();
+  clearTimeout(saveT); saveT=setTimeout(async()=>{try{await api("/api/settings",{method:"PUT",body:JSON.stringify(S.settings)})}catch(e){toast("Couldn't save settings: "+e.message)}},700);
+}
+$("#sBudget").addEventListener("input",e=>saveSettings({budget:+e.target.value||0}));
+$("#sLevels").addEventListener("change",e=>{const lv=e.target.value.split(/[,\s]+/).map(Number).filter(n=>n>0&&n<=1000).sort((a,b)=>a-b); saveSettings({levels:lv}); e.target.value=lv.join(", ")});
+function renderRates(){
+  $("#rates").innerHTML=S.settings.rates.map(r=>`<div class="rate" data-id="${esc(r.id)}">
+    <input aria-label="Provider" data-k="provider" value="${esc(r.provider)}"><input aria-label="Model" data-k="model" value="${esc(r.model)}">
+    <input aria-label="Input price" data-k="in" type="number" step="0.01" min="0" value="${r.in}"><input aria-label="Output price" data-k="out" type="number" step="0.01" min="0" value="${r.out}">
+    <button type="button" class="del" data-rdel="${esc(r.id)}">Remove</button></div>`).join("")||`<span class="hint">No rate cards yet.</span>`;
+  $("#rateSel").innerHTML=`<option value="">Custom rates</option>`+S.settings.rates.map(r=>`<option value="${esc(r.id)}">${esc(r.provider)} · ${esc(r.model)} ($${r.in} / $${r.out})</option>`).join("");
+}
+$("#rates").addEventListener("input",e=>{const row=e.target.closest(".rate");const r=S.settings.rates.find(x=>x.id===row.dataset.id);if(!r)return;const k=e.target.dataset.k;r[k]=(k==="in"||k==="out")?(+e.target.value||0):e.target.value;saveSettings({rates:S.settings.rates})});
+$("#rates").addEventListener("click",e=>{const b=e.target.closest("[data-rdel]");if(!b)return;saveSettings({rates:S.settings.rates.filter(x=>x.id!==b.dataset.rdel)});renderRates()});
+$("#addRate").addEventListener("click",()=>{S.settings.rates.push({id:"r"+Date.now().toString(36),provider:"",model:"",in:0,out:0});saveSettings({rates:S.settings.rates});renderRates()});
+
+/* ---------- manual entry form ---------- */
+function setCat(c){cat=c;document.querySelectorAll("#catSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.cat===c));$("#rateWrap").hidden=c!=="ai";setMode(c==="ai"?"tokens":"units")}
+function setMode(m){$("#fMode").value=m;document.querySelectorAll("[data-mode]").forEach(n=>n.hidden=n.dataset.mode!==m);updateCalc()}
+function formCost(){const m=$("#fMode").value;
+  if(m==="tokens") return (+$("#fIn").value||0)/1e6*(+$("#fInRate").value||0)+(+$("#fOut").value||0)/1e6*(+$("#fOutRate").value||0);
+  if(m==="units") return (+$("#fUnits").value||0)*(+$("#fUnitPrice").value||0);
+  return +$("#fAmount").value||0}
+function updateCalc(){ if(S) $("#fCalc").textContent=money(formCost()) }
+function usageLine(){const m=$("#fMode").value;const nf=n=>Number(n||0).toLocaleString("en-US");
+  if(m==="tokens") return nf($("#fIn").value)+" in · "+nf($("#fOut").value)+" out tokens";
+  if(m==="units") return nf($("#fUnits").value)+" "+($("#fUnitLabel").value.trim()||"units")+" × $"+(+$("#fUnitPrice").value||0);
+  return "Billed amount"}
+$("#form").addEventListener("input",updateCalc);
+$("#fMode").addEventListener("change",e=>setMode(e.target.value));
+$("#catSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setCat(b.dataset.cat)});
+$("#rateSel").addEventListener("change",e=>{const r=S.settings.rates.find(x=>x.id===e.target.value);if(!r)return;$("#fProvider").value=r.provider;$("#fService").value=r.model;$("#fInRate").value=r.in;$("#fOutRate").value=r.out;setMode("tokens")});
+$("#form").addEventListener("submit",async e=>{
+  e.preventDefault(); const c=formCost();
+  if(!(c>0)){toast("Enter usage and a price so the cost is above zero.");return}
+  const body={day:$("#fDate").value||todayIso,category:cat,provider:$("#fProvider").value.trim(),service:$("#fService").value.trim(),usage:usageLine(),amount_usd:Math.round(c*1e6)/1e6,note:$("#fNote").value.trim()};
+  try{await api("/api/entries",{method:"POST",body:JSON.stringify(body)});["#fIn","#fOut","#fUnits","#fAmount","#fNote"].forEach(s=>$(s).value="");month=body.day.slice(0,7);toast("Added "+money(c)+" for "+body.provider);load()}
+  catch(err){toast(err.message)}
+});
+$("#rows").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-del]");if(!b)return;
+  if(!b.classList.contains("arm")){b.classList.add("arm");b.textContent="Confirm";setTimeout(()=>{if(b.isConnected){b.classList.remove("arm");b.textContent="Delete"}},3000);return}
+  try{await api("/api/entries/"+encodeURIComponent(b.dataset.del),{method:"DELETE"});load()}catch(err){toast(err.message)}
+});
+
+/* ---------- actions ---------- */
+$("#syncBtn").addEventListener("click",async e=>{
+  const b=e.target;b.disabled=true;b.textContent="Syncing…";
+  try{const r=await api("/api/sync",{method:"POST"});const failed=Object.entries(r).filter(([,v])=>v.startsWith("failed"));
+    toast(failed.length?failed.map(([k,v])=>k+": "+v.replace(/^failed: /,"")).join(" · "):"Sync complete");await load()}
+  catch(err){toast(err.message)} finally{b.disabled=false;b.textContent="Sync now"}
+});
+$("#testBtn").addEventListener("click",async e=>{
+  const b=e.target;b.disabled=true;
+  try{const r=await api("/api/test-alert",{method:"POST"});const sent=Object.entries(r).filter(([,v])=>v==="sent").map(([k])=>k);const failed=Object.entries(r).filter(([,v])=>v.startsWith("failed"));
+    toast(failed.length?"Failed: "+failed.map(([k,v])=>k+" ("+v.slice(8,300)+")").join(", "):sent.length?"Sent to "+sent.join(", "):"No channels set up yet")}
+  catch(err){toast(err.message)} finally{b.disabled=false}
+});
+$("#hooks").addEventListener("click",async e=>{const b=e.target.closest("[data-copy]");if(!b)return;
+  try{await navigator.clipboard.writeText(b.dataset.copy);toast("Copied")}catch(err){const c=b.previousElementSibling;const r=document.createRange();r.selectNodeContents(c);const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected. Copy it manually.")}});
+$("#exportBtn").addEventListener("click",()=>{
+  const q=v=>{v=String(v??"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const head=["date","source","provider","service","category","usage","cost_usd","note"];
+  const lines=[head.join(",")].concat(S.summary.items.map(e=>[e.day,e.source,e.provider,e.service,e.category,e.usage||"",e.amount.toFixed(4),e.note||""].map(q).join(",")));
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/csv"}));a.download="api-spend-"+month+".csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+$("#gwFilter").addEventListener("change",e=>{gwFilter=e.target.value;renderTraffic()});
+$("#gwPick").addEventListener("change",()=>{$("#gwUrl").textContent=S.gatewayBase+$("#gwPick").value+"?token="+encodeURIComponent(S.webhookToken)});
+$("#gwCopy").addEventListener("click",async()=>{const t=$("#gwUrl").textContent;try{await navigator.clipboard.writeText(t);toast("Copied")}catch(e){const r=document.createRange();r.selectNodeContents($("#gwUrl"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected. Copy it manually.")}});
+function savePrules(){S.settings.priceRules=S.settings.priceRules||[];saveSettings({priceRules:S.settings.priceRules})}
+$("#prules").addEventListener("input",e=>{const row=e.target.closest(".prule");const r=(S.settings.priceRules||[]).find(x=>x.id===row.dataset.id);if(!r)return;const k=e.target.dataset.k;r[k]=k==="per1k"?(+e.target.value||0):e.target.value;savePrules()});
+$("#prules").addEventListener("change",e=>{if(e.target.tagName==="SELECT"){const row=e.target.closest(".prule");const r=S.settings.priceRules.find(x=>x.id===row.dataset.id);if(r){r.gateway=e.target.value;savePrules()}}});
+$("#prules").addEventListener("click",e=>{const b=e.target.closest("[data-pdel]");if(!b)return;S.settings.priceRules=S.settings.priceRules.filter(x=>x.id!==b.dataset.pdel);savePrules();renderPrules()});
+$("#addPrule").addEventListener("click",()=>{S.settings.priceRules=S.settings.priceRules||[];S.settings.priceRules.push({id:"p"+Date.now().toString(36),gateway:"*",api:"*",per1k:0});savePrules();renderPrules()});
+$("#month").addEventListener("change",e=>{month=e.target.value;load()});
+$("#filterCat").addEventListener("change",e=>{filterCat=e.target.value;renderRows()});
+
+if(DEMO){$("#demoBar").hidden=false;document.title="Spend Meter · Demo";}
+$("#fDate").value=todayIso; setCat("other");
+load(); setInterval(()=>{if(document.visibilityState==="visible")load()},5*60*1000);
+})();
+</script>
+</body>
+</html>
